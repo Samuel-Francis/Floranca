@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ar">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>لغز فرعون</title>
+  <style>
+    :root{
+      --bg:#0b0f13; --panel:#0f1518; --muted:#9aa4aa; --accent:#7c3aed; --revealed:#1f9d9a;
+      --glass: rgba(255,255,255,0.03);
+      --gap:6px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;font-family:Inter,Roboto,Segoe UI,system-ui,-apple-system,'Helvetica Neue',Arial;direction:rtl;color:#e6eef0;background:linear-gradient(180deg,#050607 0%,#0b0f13 100%)}
+    header{position:sticky;top:0;background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);backdrop-filter:blur(6px);padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.03);z-index:10}
+    .top-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .brand{font-weight:700;color:var(--accent);font-size:18px}
+    .team-name{font-weight:600}
+    .panel{background:var(--panel);padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.02);min-width:180px;font-size:13px}
+    .count{font-size:13px;color:var(--muted)}
+
+    .container{height:calc(100vh - 120px);overflow:auto;padding:16px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(60px,1fr));grid-auto-rows:60px;gap:var(--gap)}
+
+    .box{background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent);border-radius:8px;border:1.5px solid rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;flex-direction:column;color:#9fb2b3;font-size:13px;user-select:none;cursor:pointer;padding:6px;transition:transform .12s ease,box-shadow .12s ease,border-color .12s ease}
+    .box .num{font-size:12px;color:#7f8b8b}
+    .box .word{font-weight:700;color:#e6f7f6;display:none;text-align:center;line-height:1.2}
+    .box.revealed{background:linear-gradient(180deg,var(--revealed),#165756);border-color:rgba(255,255,255,0.06);color:white}
+    .box.revealed .num{display:block;color:rgba(255,255,255,0.85);font-size:11px}
+    .box.revealed .word{display:block}
+    .box:hover{transform:translateY(-3px);box-shadow:0 8px 18px rgba(0,0,0,0.45)}
+    .box.miss{animation:missFlash .6s ease;border-color:rgba(255,90,90,0.95);box-shadow:0 6px 14px rgba(255,90,90,0.07)}
+    @keyframes missFlash{0%{transform:translateY(0)}50%{transform:translateY(-4px);background:linear-gradient(180deg,rgba(255,90,90,0.03),transparent)}100%{transform:translateY(0)}}
+
+    @media (max-width:600px){.grid{grid-template-columns:repeat(auto-fill,minmax(48px,1fr));grid-auto-rows:56px}}
+
+    footer{padding:10px 16px;color:var(--muted);font-size:12px;border-top:1px solid rgba(255,255,255,0.02)}
+    .container::-webkit-scrollbar{height:8px;width:8px}
+    .container::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.04);border-radius:8px}
+    .box img{display:block;max-width:80%;max-height:60%;object-fit:contain}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="top-row">
+      <div class="brand">لغز فرعون</div>
+      <div class="team-name" id="teamName">...</div>
+      <div style="flex:1"></div>
+      <div class="panel" id="statusPanel">جاري التحميل...</div>
+      <button class="panel" id="reloadConfigBtn" type="button" style="cursor:pointer">إعادة تحميل</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <footer>
+    انقر على المربعات لتكشف الكلمة أو الإيموجي. مربع واحد مفتوح في كل مرة. لا يُحفظ التقدّم.
+  </footer>
+
+  <script src="config.js"></script>
+  <script>
+    (function init(){
+      const urlParams = new URLSearchParams(window.location.search);
+      const teamId = String(urlParams.get('team') || '1');
+      const boxesOverride = urlParams.get('boxes');
+
+      const grid = document.getElementById('grid');
+      const teamNameEl = document.getElementById('teamName');
+      const statusPanel = document.getElementById('statusPanel');
+
+      /** @type {Record<string, string|object>} words live only in memory until click */
+      let wordsMap = {};
+      let totalBoxes = 8000;
+      let openBoxEl = null;
+
+      function renderWordContent(el, entry){
+        el.textContent = '';
+        if(typeof entry === 'string'){
+          el.textContent = entry;
+          return;
+        }
+        if(!entry || typeof entry !== 'object') return;
+        if(entry.type === 'image' && entry.src){
+          const img = document.createElement('img');
+          img.src = entry.src;
+          img.alt = entry.alt || '';
+          el.appendChild(img);
+        } else {
+          el.textContent = entry.value || '';
+        }
+      }
+
+      function closeBox(el){
+        el.classList.remove('revealed');
+        const wordEl = el.querySelector('.word');
+        if(wordEl) wordEl.textContent = '';
+      }
+
+      function openBox(el){
+        const num = el.dataset.num;
+        const entry = wordsMap[num];
+        if(!entry) return;
+        renderWordContent(el.querySelector('.word'), entry);
+        el.classList.add('revealed');
+      }
+
+      function onBoxClick(el){
+        const num = el.dataset.num;
+        const hasWord = Object.prototype.hasOwnProperty.call(wordsMap, num);
+
+        if(openBoxEl && openBoxEl !== el){
+          closeBox(openBoxEl);
+          openBoxEl = null;
+        }
+
+        if(hasWord){
+          if(openBoxEl === el){
+            closeBox(el);
+            openBoxEl = null;
+          } else {
+            openBox(el);
+            openBoxEl = el;
+          }
+          return;
+        }
+
+        el.classList.add('miss');
+        setTimeout(() => el.classList.remove('miss'), 650);
+      }
+
+      function renderGrid(){
+        openBoxEl = null;
+        const fragment = document.createDocumentFragment();
+        for(let i = 1; i <= totalBoxes; i++){
+          const b = document.createElement('div');
+          b.className = 'box';
+          b.dataset.num = String(i);
+          const num = document.createElement('div');
+          num.className = 'num';
+          num.textContent = i;
+          const word = document.createElement('div');
+          word.className = 'word';
+          b.appendChild(num);
+          b.appendChild(word);
+          b.addEventListener('click', () => onBoxClick(b));
+          fragment.appendChild(b);
+        }
+        grid.replaceChildren(fragment);
+      }
+
+      function loadAll(){
+        statusPanel.textContent = 'جاري تحميل الإعداد...';
+        try{
+          const appConfig = window.MYSTERY_CONFIG;
+          if(!appConfig || !appConfig.teams){
+            throw new Error('config.js not loaded');
+          }
+
+          const team = appConfig.teams[teamId] || appConfig.teams['1'];
+          if(!team){
+            throw new Error(`لا يوجد فريق برقم ${teamId}`);
+          }
+
+          totalBoxes = boxesOverride ? Number(boxesOverride) : (appConfig.totalBoxes || 8000);
+          wordsMap = team.words || {};
+
+          teamNameEl.textContent = `الفريق: ${team.name || teamId}`;
+          statusPanel.textContent = `${totalBoxes.toLocaleString('ar-EG')} مربع — ${Object.keys(wordsMap).length} كلمة/إيموجي`;
+          renderGrid();
+        } catch(err){
+          console.error(err);
+          statusPanel.textContent = 'فشل التحميل — تحقق من config.js';
+          teamNameEl.textContent = 'خطأ في الإعداد';
+        }
+      }
+
+      document.getElementById('reloadConfigBtn').addEventListener('click', () => {
+        const old = document.querySelector('script[src="config.js"]');
+        const script = document.createElement('script');
+        script.src = 'config.js?t=' + Date.now();
+        script.onload = loadAll;
+        script.onerror = () => {
+          statusPanel.textContent = 'فشل تحميل config.js';
+        };
+        if(old) old.remove();
+        document.body.appendChild(script);
+      });
+
+      loadAll();
+    })();
+  </script>
+</body>
+</html>
